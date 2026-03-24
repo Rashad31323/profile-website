@@ -14,6 +14,7 @@ export default function WorkWallet({ cards }) {
   const dragged = useRef(false)
   const suppressClickRef = useRef(false)
   const autoplayRef = useRef(null)
+  const wheelLockRef = useRef(false)
 
   const goNext = () => setActive((prev) => (prev + 1) % total)
   const goPrev = () => setActive((prev) => (prev - 1 + total) % total)
@@ -83,6 +84,30 @@ export default function WorkWallet({ cards }) {
     suppressClickRef.current = false
   }
 
+  const onWheel = (event) => {
+    if (wheelLockRef.current) return
+
+    const absX = Math.abs(event.deltaX)
+    const absY = Math.abs(event.deltaY)
+    const dominantX = absX > absY * 1.15
+    const dominantY = absY > absX * 1.15
+
+    if (!dominantX && !dominantY) return
+
+    const delta = dominantX ? event.deltaX : event.deltaY
+    if (Math.abs(delta) < 18) return
+
+    event.preventDefault()
+    wheelLockRef.current = true
+
+    if (delta > 0) goNext()
+    if (delta < 0) goPrev()
+
+    window.setTimeout(() => {
+      wheelLockRef.current = false
+    }, 360)
+  }
+
   if (total === 0) return null
 
   return (
@@ -104,6 +129,7 @@ export default function WorkWallet({ cards }) {
         onMouseLeave={() => setIsHovered(false)}
         onClickCapture={onClickCapture}
         onDragStart={(event) => event.preventDefault()}
+        onWheel={onWheel}
       >
         <div className="wallet-peek-layer" aria-hidden="true">
           <WorkCard
