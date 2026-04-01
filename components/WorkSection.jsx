@@ -2,6 +2,7 @@ import WorkWallet from './WorkWallet'
 
 const USERNAME = 'ahmadrashad1'
 const STARRED_API = `https://api.github.com/users/${USERNAME}/starred?per_page=100`
+const README_API = (owner, repo) => `https://api.github.com/repos/${owner}/${repo}/readme`
 
 const CARD_THEMES = [
   {
@@ -33,10 +34,13 @@ const CARD_THEMES = [
 const TECH_HINTS = [
   'React',
   'Next.js',
+  'Next',
   'Node.js',
+  'Node',
   'Express',
   'TypeScript',
   'JavaScript',
+  'Spring',
   'Python',
   'Java',
   'C++',
@@ -52,8 +56,42 @@ const TECH_HINTS = [
   'WebSockets',
   'GraphQL',
   'REST API',
+  'CI/CD',
+  'GitHub Actions',
+  'n8n',
+  'LangChain',
   'RAG',
   'LLM',
+]
+
+const TECH_PATTERNS = [
+  { label: 'React', pattern: /\breact\b/i },
+  { label: 'Next.js', pattern: /\bnext(\.js)?\b/i },
+  { label: 'Node.js', pattern: /\bnode(\.js)?\b/i },
+  { label: 'Express', pattern: /\bexpress\b/i },
+  { label: 'TypeScript', pattern: /\btypescript\b|\bts\b/i },
+  { label: 'JavaScript', pattern: /\bjavascript\b|\bjs\b/i },
+  { label: 'Spring Boot', pattern: /\bspring\s*boot\b/i },
+  { label: 'Python', pattern: /\bpython\b/i },
+  { label: 'Java', pattern: /\bjava\b/i },
+  { label: 'C++', pattern: /\bc\+\+\b/i },
+  { label: 'MySQL', pattern: /\bmysql\b/i },
+  { label: 'MongoDB', pattern: /\bmongodb\b/i },
+  { label: 'PostgreSQL', pattern: /\bpostgres(ql)?\b/i },
+  { label: 'Docker', pattern: /\bdocker\b/i },
+  { label: 'Kubernetes', pattern: /\bkubernetes\b|\bk8s\b/i },
+  { label: 'Firebase', pattern: /\bfirebase\b/i },
+  { label: 'Redis', pattern: /\bredis\b/i },
+  { label: 'Tailwind', pattern: /\btailwind\b/i },
+  { label: 'WebSockets', pattern: /\bwebsocket(s)?\b/i },
+  { label: 'GraphQL', pattern: /\bgraphql\b/i },
+  { label: 'REST API', pattern: /\brest\b|\bapi\b/i },
+  { label: 'GitHub Actions', pattern: /\bgithub\s*actions\b/i },
+  { label: 'CI/CD', pattern: /\bci\/cd\b|\bcontinuous\s+integration\b|\bcontinuous\s+deployment\b/i },
+  { label: 'n8n', pattern: /\bn8n\b/i },
+  { label: 'LangChain', pattern: /\blangchain\b/i },
+  { label: 'RAG', pattern: /\brag\b|\bretrieval\s*augmented\s*generation\b/i },
+  { label: 'LLM', pattern: /\bllm\b|\blarge\s+language\s+model\b/i },
 ]
 
 const PROJECT_TECH_OVERRIDES = {
@@ -110,6 +148,38 @@ function toTags(repo) {
   return tags.length > 0 ? tags : ['Open Source', 'Repository', 'GitHub']
 }
 
+function extractTechFromReadme(readmeText) {
+  if (!readmeText) return []
+
+  const found = TECH_PATTERNS
+    .filter(({ pattern }) => pattern.test(readmeText))
+    .map(({ label }) => label)
+
+  return [...new Set(found)]
+}
+
+async function getReadmeTechTags(repo) {
+  const owner = repo?.owner?.login
+  const name = repo?.name
+  if (!owner || !name) return []
+
+  try {
+    const response = await fetch(README_API(owner, name), {
+      next: { revalidate: 3600 },
+      headers: {
+        Accept: 'application/vnd.github.raw+json',
+      },
+    })
+
+    if (!response.ok) return []
+
+    const readme = await response.text()
+    return extractTechFromReadme(readme).slice(0, 5)
+  } catch {
+    return []
+  }
+}
+
 async function getOwnStarredRepos() {
   try {
     const response = await fetch(STARRED_API, {
@@ -138,14 +208,24 @@ async function getOwnStarredRepos() {
 
 export default async function WorkSection() {
   const repos = await getOwnStarredRepos()
-  const cards = repos.map((repo, index) => ({
-    title: repo.name,
-    subtitle: formatRepoSubtitle(repo),
-    slug: repo.name.toLowerCase(),
-    href: repo.html_url,
-    tags: toTags(repo),
-    ...CARD_THEMES[index % CARD_THEMES.length],
-  }))
+
+  const cards = await Promise.all(
+    repos.map(async (repo, index) => {
+      const repoKey = normalizeKey(repo?.name)
+      const override = PROJECT_TECH_OVERRIDES[repoKey]
+      const readmeTags = override?.length ? [] : await getReadmeTechTags(repo)
+      const tags = override?.length ? override : readmeTags.length ? readmeTags : toTags(repo)
+
+      return {
+        title: repo.name,
+        subtitle: formatRepoSubtitle(repo),
+        slug: repo.name.toLowerCase(),
+        href: repo.html_url,
+        tags,
+        ...CARD_THEMES[index % CARD_THEMES.length],
+      }
+    }),
+  )
 
   return (
     <section id="work" className="work-section">
